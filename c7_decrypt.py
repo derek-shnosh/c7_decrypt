@@ -39,7 +39,7 @@ INTFCONFIG_PATTERN = re.compile(
 
 # Capture one group: <OSPF_KEY>
 OSPFKEY_PATTERN = re.compile(
-    r"ip ospf message-digest-key (\d+) md5 7 (\S+)",
+    r"^\s+ip ospf message-digest-key (\d+) md5 7 (\S+)",
     re.MULTILINE
 )
 
