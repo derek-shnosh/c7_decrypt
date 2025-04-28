@@ -1,2 +1,0 @@
-# Invalid example ('usrname', 'passwd')
-usrname testadmin privilege 15 passwd 7 1403171818142B38373F3C2726

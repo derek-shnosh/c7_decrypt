@@ -1,3 +1,0 @@
-# Valid example... username: testadmin, password: testpassword
-username testadmin privilege 15 password 7 1403171818142B38373F3C2726
-username testadmin2 privilege 15 password 7 00101615104B0A151C36435C0D4B

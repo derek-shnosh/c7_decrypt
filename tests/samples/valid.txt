@@ -1,0 +1,9 @@
+# Valid credential examples
+username testadmin privilege 15 password 7 1403171818142B38373F3C2726
+username testadmin2 privilege 15 password 7 00101615104B0A151C36435C0D4B
+
+# Valid OSPF key example
+interface Vlan800
+ description OSPF_Transit
+ ip address 10.192.63.1 255.255.255.248
+ ip ospf message-digest-key 1 md5 7 044F0E151B2E5F5E0F12000E
