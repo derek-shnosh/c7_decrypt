@@ -1,3 +1,5 @@
+[![Cisco Type 7 Decrypter](https://github.com/derek-shnosh/c7_decrypt/actions/workflows/python-app.yml/badge.svg)](https://github.com/derek-shnosh/c7_decrypt/actions/workflows/python-app.yml)
+
 # Cisco Type 7 Decrypter
 
 This Python script decrypts Cisco “type 7” passwords and OSPF MD5 keys. It can:
