@@ -27,7 +27,19 @@ ALLOWED_EXTENSIONS = {'.txt', '.log', '.cisco'}
 
 # Capture two groups: <USER> and <ENCRYPTED_PASSWORD>
 USERPASS_PATTERN = re.compile(
-    r'^username\s+(\S+)\s+privilege\s+15\s+password\s+7\s+(\S+)',
+    r"^username (\S+) privilege 15 password 7 (\S+)",
+    re.MULTILINE
+)
+
+# Capture one group: <INTF_NAME>
+INTFCONFIG_PATTERN = re.compile(
+    r"^interface (\S+)(.*?)(?=^\s*interface\s|\Z)",
+    re.MULTILINE | re.DOTALL
+)
+
+# Capture one group: <OSPF_KEY>
+OSPFKEY_PATTERN = re.compile(
+    r"ip ospf message-digest-key (\d+) md5 7 (\S+)",
     re.MULTILINE
 )
 
@@ -42,6 +54,7 @@ def decrypt_password(encrypted: str):
 
     Decrypt a string as a Cisco Type 7 password using decimal offset [0..15]
     plus the 53-byte key KEY_HEX.
+
     Returns True/False (as decryption_ok), result:
       - decryption_ok = True => result is the decrypted plaintext
       - decryption_ok = False => result is an error message
@@ -70,74 +83,114 @@ def decrypt_password(encrypted: str):
 def parse_file(filepath: str):
     """
     Reads the entire file into memory and uses a multiline regex to find:
-      username <USER> privilege 15 password 7 <ENCRYPTED>
-    Returns a list of (username, decrypted_pw, decryption_ok) tuples.
+    - username ... password 7 <encrypted_pw>
+    - ip ospf message-digest-key <keyid> md5 7 <encrypted_pw>
+
+    Returns two lists:
+      user_results = [(username, decrypted_or_error, decryption_ok), ...]
+      ospf_results = [(key_id, decrypted_or_error, decryption_ok), ...]
     """
-    results = []
+
+    # Store contents of file
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            file_contents = f.read()  # Read entire file as one string
-
-        # Find all matches at once
-        matches = USERPASS_PATTERN.findall(file_contents)
-        # matches is now a list of tuples [(<USER>, <ENC>), (<USER>, <ENC>), ...]
-
-        for user, encrypted_pw in matches:
-            decryption_ok, decrypted_pw = decrypt_password(encrypted_pw)
-            results.append((user, decrypted_pw, decryption_ok))
-
+        with open(filepath, "r", encoding="utf-8") as file:
+            file_contents = file.read()
     except (IOError, OSError) as e:
         print(f"Error reading file '{filepath}': {e}")
+        return [], []
 
-    return results
+    # Find all type 7 user passwords
+    user_results = []
+    for user, encrypted_pw in USERPASS_PATTERN.findall(file_contents):
+        decryption_ok, decrypted_pw = decrypt_password(encrypted_pw)
+        user_results.append((user, decrypted_pw, decryption_ok))
+
+    # Find all type 7 OSPF keys
+    ospf_results = []
+    for intf_match in INTFCONFIG_PATTERN.finditer(file_contents):
+        intf_name = intf_match.group(1)
+        intf_config = intf_match.group(2)
+        for key_id, encrypted_pw in OSPFKEY_PATTERN.findall(intf_config):
+            decryption_ok, decrypted_pw = decrypt_password(encrypted_pw)
+            ospf_results.append((intf_name, key_id, decrypted_pw, decryption_ok))
+
+    return user_results, ospf_results
 
 
-def process_file(filepath: str, mask=False) -> bool:
+def process_file(filepath: str, mask_decrypted: bool = False) -> bool:
     """
-    Parses a single file for type 7 lines.
-    Prints them. Returns True if any found, else False.
+    Parses a single file for user passwords and OSPF keys (of type 7) and prints
+    them.
+
+    Returns True if any found, else False.
     """
-    results = parse_file(filepath)
-    if not results:
+    user_pws, ospf_keys = parse_file(filepath)
+    if not user_pws and not ospf_keys:
         return False
 
+    # Print file name in bold
     print(f"File: {BOLD}{os.path.abspath(filepath)}{RESET}")
-    for user, decrypted_pw, decryption_ok in results:
+
+    # Print decrypted user passwords
+    for user, decrypted_pw, decryption_ok in user_pws:
         if decryption_ok:
-            if mask:
-                print(f"  Username: {user}, Decrypted Password: <MASKED>")
-            else:
-                print(f"  Username: {user}, Decrypted Password: {decrypted_pw}")
+            output = "<MASKED>" if mask_decrypted else decrypted_pw
+            print(f"  Username: {user}, Decrypted Password: {output}")
         else:
             print(f"  Username: {user}, ERROR: {decrypted_pw}")
+
+    # Print decrypted OSPF keys
+    for intf_name, key_id, decrypted_pw, decryption_ok in ospf_keys:
+        if decryption_ok:
+            output = "<MASKED>" if mask_decrypted else decrypted_pw
+            print(f"  Interface {intf_name}, OSPF key {key_id}: {output}")
+        else:
+            print(f"  Interface {intf_name}, OSPF Key {key_id}, ERROR: {decrypted_pw}")
+
     return True
 
 
-def process_directory(dirpath: str, max_depth: int, current_depth: int = 0, mask=False) -> bool:
+def process_directory(
+    dirpath: str,
+    max_depth: int,
+    current_depth: int = 0,
+    mask_decrypted: bool = False
+) -> bool:
     """
     Recursively processes `dirpath` up to `max_depth` levels deep.
-    - If directory is empty and current_depth=0 => prints "No files found..."
-    - Only parse ALLOWED_EXTENSIONS
-    - Returns True if any Type 7 lines found, else False
+    - If directory is completely empty (only at top level), print "No files
+     found..." and return False.
+    - Otherwise scan for ALLOWED_FILES (and recurse), and return True if any
+     were processed.
     """
-    entries = list(os.scandir(dirpath))
+    # Get list of files in specified path
+    try:
+        entries = list(os.scandir(dirpath))
+    except (IOError, OSError) as e:
+        print(f"Error opening directory '{dirpath}': {e}")
+        return False
+
+    # If no files or subdirectories
     if not entries and current_depth == 0:
         print(f"No files found in directory: {os.path.abspath(dirpath)}")
         return False
 
+    # Look for files with allowed file extensions, parse them for type 7s
     found_any = False
     for entry in entries:
         if entry.is_file():
             _, file_extension = os.path.splitext(entry.name)
             if file_extension.lower() in ALLOWED_EXTENSIONS:
-                found_in_file = process_file(entry.path, mask=mask)
-                if found_in_file:
+                if process_file(entry.path, mask_decrypted):
                     found_any = True
-        elif entry.is_dir():
-            if current_depth < max_depth:
-                sub_found = process_directory(entry.path, max_depth, current_depth + 1, mask=mask)
-                if sub_found:
-                    found_any = True
+        elif entry.is_dir() and current_depth < max_depth:
+            if process_directory(
+                entry.path,
+                max_depth,
+                current_depth + 1,
+                mask_decrypted
+            ):
+                found_any = True
     return found_any
 
 
@@ -159,18 +212,18 @@ def main():
         help="Interpret the `target` argument as a raw type-7 encrypted string.",
     )
     parser.add_argument(
-        "-r",
-        "--depth",
-        type=int,
-        default=0,
-        help="Recursively parse directories up to this depth (default=0 = non-recursive).",
-    )
-    parser.add_argument(
         "-m",
         "--mask",
         action="store_true",
         default=False,
         help="Mask the decrypted passwords (show <MASKED> instead)."
+    )
+    parser.add_argument(
+        "-d",
+        "--depth",
+        type=int,
+        default=0,
+        help="Recursively parse directories up to this depth (default=0 = non-recursive).",
     )
     args = parser.parse_args()
 
@@ -193,19 +246,19 @@ def main():
         return
 
     if os.path.isdir(path):
-        found = process_directory(path, args.depth, mask=args.mask)
+        found = process_directory(path, args.depth, mask_decrypted=args.mask)
         if not found:
             # If not empty, print the final message
             entries = list(os.scandir(path))
             if entries:  # not empty
                 print(
-                    f"No Type 7 passwords found in any file in path: {os.path.abspath(path)}"
+                    f"No Type 7s found in any file in path: {os.path.abspath(path)}"
                 )
     elif os.path.isfile(path):
         # Check file extension
         _, file_extension = os.path.splitext(path)
         if file_extension.lower() in ALLOWED_EXTENSIONS:
-            found_in_file = process_file(path, mask=args.mask)
+            found_in_file = process_file(path, mask_decrypted=args.mask)
             if not found_in_file:
                 print(f"No Type 7 passwords found in file: {os.path.abspath(path)}")
         else:
