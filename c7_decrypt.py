@@ -88,7 +88,7 @@ def parse_file(filepath: str):
 
     Returns two lists:
       user_results = [(username, decrypted_or_error, decryption_ok), ...]
-      ospf_results = [(key_id, decrypted_or_error, decryption_ok), ...]
+      ospf_results = [(intf_name, key_id, decrypted_or_error, decryption_ok), ...]
     """
 
     # Store contents of file
