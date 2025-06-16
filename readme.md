@@ -82,6 +82,39 @@ options:
    - Instead of printing the real plaintext, it displays `<MASKED>` for each found password.
    - Useful in scenarios where you want to confirm the existence of Type 7 passwords **without** exposing them.
 
+### CSV Output
+
+You can emit all findings in **CSV** format by adding the `-c`/`--csv` flag (ignored in string mode). The output is written to **stdout** with these columns:
+
+```
+file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key
+```
+
+To save the CSV directly to a file, use shell redirection (`>` or `>>`). For example:
+
+```bash
+# Overwrite or create results.csv
+./c7_decrypt.py --csv /path/to/configs > results.csv
+
+# Append to an existing file
+./c7_decrypt.py --csv /path/to/configs >> results.csv
+```
+
+#### Example
+
+```bash
+./c7_decrypt.py --csv /path/to/configs
+```
+
+Produces:
+
+```
+file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key
+/home/user/configs/router1.txt,testadmin,testpassword,,,  
+/home/user/configs/router1.txt,,,Vlan800,1,ospfsecret  
+…
+```
+
 ### Behavior
 
 - If you run the script **without** `-s` and provide a **non-existent** path, it prints:

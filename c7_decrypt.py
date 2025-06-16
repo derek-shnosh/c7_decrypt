@@ -8,6 +8,8 @@ import os
 import platform
 import re
 import argparse
+import sys
+import csv
 
 # Windows platform check
 IS_WINDOWS = platform.system() == "Windows"
@@ -194,6 +196,50 @@ def process_directory(
     return found_any
 
 
+def output_csv(target_path: str, max_depth: int, mask_decrypted: bool):
+    """
+    Output all decrypted user passwords and OSPF keys in CSV format.
+
+    CSV Columns:
+      file, username, decrypted_password, ospf_interface, ospf_key_id, ospf_key
+
+    Recursively scans directories up to `max_depth`. Outputs to stdout.
+    """
+    writer = csv.writer(sys.stdout)
+    writer.writerow([
+        "file",
+        "username",
+        "decrypted_password",
+        "ospf_interface",
+        "ospf_key_id",
+        "ospf_key",
+    ])
+
+    to_scan = []
+    if os.path.isfile(target_path):
+        to_scan.append(target_path)
+    else:
+        base_depth = target_path.rstrip(os.sep).count(os.sep)
+        for root, dirs, files in os.walk(target_path):
+            if (root.count(os.sep) - base_depth) >= max_depth:
+                dirs.clear()
+            for name in files:
+                if os.path.splitext(name)[1].lower() in ALLOWED_EXTENSIONS:
+                    to_scan.append(os.path.join(root, name))
+
+    for filepath in to_scan:
+        abs_path = os.path.abspath(filepath)
+        users, ospfs = parse_file(filepath)
+        for user, pw, ok in users:
+            if ok:
+                pw_out = "<MASKED>" if mask_decrypted else pw
+                writer.writerow([abs_path, user, pw_out, "", "", ""])
+        for intf, keyid, pw, ok in ospfs:
+            if ok:
+                pw_out = "<MASKED>" if mask_decrypted else pw
+                writer.writerow([abs_path, "", "", intf, keyid, pw_out])
+
+
 def main():
     """
     Main script logic.
@@ -225,7 +271,28 @@ def main():
         default=0,
         help="Recursively parse directories up to this depth (default=0 = non-recursive).",
     )
+    parser.add_argument(
+        "-c",
+        "--csv",
+        action="store_true",
+        default=False,
+        help="Output results in CSV format."
+    )
     args = parser.parse_args()
+
+    # Warn if CSV is requested in string mode
+    if args.string and args.csv:
+        print(
+            "Warning: CSV output is ignored when using -s/--string mode",
+            file=sys.stderr
+        )
+        # clear the flag so it won't be used:
+        args.csv = False
+
+    # CSV output? (only when not in string mode)
+    if args.csv:
+        output_csv(args.target, args.depth, args.mask)
+        return
 
     # If -s is given => treat the argument as a raw type 7 string
     if args.string:
