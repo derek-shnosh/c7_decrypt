@@ -26,21 +26,19 @@ It uses the “decimal offset + 53-byte key” scheme found in some Cisco device
 ## Usage
 
 ```
-usage: c7_decrypt [-h] [-s] [-m] [-d DEPTH] target
+usage: c7_decrypt [-h] [-s] [-m] [-d DEPTH] [-c] target
 
 Decrypt Cisco Type 7 lines in files/directories, or a single string.
 
 positional arguments:
-  target                File or directory path (if not using -s), or a raw type-7 string (if -s is set).
+  target             File or directory path (if not using -s), or a raw type-7 string (if -s is set).
 
 options:
-  -h, --help            show this help message and exit
-  -s, --string          Interpret the `target` argument as a raw type-7
-                        encrypted string.
-  -m, --mask            Mask the decrypted passwords (show <MASKED> instead).
-  -d DEPTH, --depth DEPTH
-                        Recursively parse directories up to this depth
-                        (default=0 = non-recursive).
+  -h, --help         show this help message and exit
+  -s, --string       Interpret the `target` argument as a raw type-7 encrypted string.
+  -m, --mask         Mask the decrypted passwords (show <MASKED> instead).
+  -d, --depth DEPTH  Recursively parse directories up to this depth (default=0 = non-recursive).
+  -c, --csv          Output results in CSV format.
 ```
 
 ### Examples
