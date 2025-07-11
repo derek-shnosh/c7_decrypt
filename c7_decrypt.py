@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 """
-Decrypt Cisco type 7 password(s) from file(s) or a string.
+Decrypt insecure (unencrypted or type 7) password(s) from Cisco configuration
+file(s) or a string.
 """
 
 import os
@@ -27,21 +28,39 @@ KEY_HEX = (
 # Files must end with one of these extensions to be parsed
 ALLOWED_EXTENSIONS = {'.txt', '.log', '.cisco'}
 
-# Capture two groups: <USER> and <ENCRYPTED_PASSWORD>
-USERPASS_PATTERN = re.compile(
+# Capture <USER> and <ENCRYPTED_PASSWORD>
+RE_USER = re.compile(
     r"^username (\S+) privilege 15 password 7 (\S+)",
     re.MULTILINE
 )
 
-# Capture one group: <INTF_NAME>
-INTFCONFIG_PATTERN = re.compile(
-    r"^interface (\S+)(.*?)(?=^\s*interface\s|\Z)",
+# Capture <INTF_NAME> plus stanza
+RE_IFCONFIG = re.compile(
+    r"^interface (\S+)(.*?)(?=^\S|\Z)",
     re.MULTILINE | re.DOTALL
 )
 
-# Capture one group: <OSPF_KEY>
-OSPFKEY_PATTERN = re.compile(
+# Capture <OSPF-KEY-ID> and <OSPF_KEY>
+RE_OSPFKEY = re.compile(
     r"^\s+ip ospf message-digest-key (\d+) md5 7 (\S+)",
+    re.MULTILINE
+)
+
+# Capture <TACACS_SERVER> plus stanza
+RE_TACACS = re.compile(
+    r"^tacacs server (\S+)(.*?)(?=^\S|\Z)",
+    re.MULTILINE | re.DOTALL
+)
+
+# Generic encrypted key pattern
+RE_ENC_KEY = re.compile(
+    r"^\skey 7 (\S+)",
+    re.MULTILINE
+)
+
+# Generic unencrypted key pattern
+RE_UNENC_KEY = re.compile(
+    r"^\skey\s+(?!7\s)(\S+)",
     re.MULTILINE
 )
 
@@ -54,8 +73,7 @@ def decrypt_password(encrypted: str):
     """
     Thanks for help here, ChatGPT! :D
 
-    Decrypt a string as a Cisco Type 7 password using decimal offset [0..15]
-    plus the 53-byte key KEY_HEX.
+    Decrypt a string as a Cisco Type 7 password.
 
     Returns True/False (as decryption_ok), result:
       - decryption_ok = True => result is the decrypted plaintext
@@ -85,12 +103,14 @@ def decrypt_password(encrypted: str):
 def parse_file(filepath: str):
     """
     Reads the entire file into memory and uses a multiline regex to find:
-    - username ... password 7 <encrypted_pw>
+    - username <username> ... password 7 <encrypted_pw>
     - ip ospf message-digest-key <keyid> md5 7 <encrypted_pw>
+    - tacacs server <name> with their <keys>
 
-    Returns two lists:
-      user_results = [(username, decrypted_or_error, decryption_ok), ...]
-      ospf_results = [(intf_name, key_id, decrypted_or_error, decryption_ok), ...]
+    Returns three lists:
+      user_results   = [(user, pw, decrypt_ok), ...]
+      ospf_results   = [(intf_name, key_id, key, decrypt_ok), ...]
+      tacacs_results = [(server_name, key, decrypt_ok), ...]
     """
 
     # Store contents of file
@@ -99,24 +119,34 @@ def parse_file(filepath: str):
             file_contents = file.read()
     except (IOError, OSError) as e:
         print(f"Error reading file '{filepath}': {e}")
-        return [], []
+        return [], [], []
 
     # Find all type 7 user passwords
     user_results = []
-    for user, encrypted_pw in USERPASS_PATTERN.findall(file_contents):
-        decryption_ok, decrypted_pw = decrypt_password(encrypted_pw)
-        user_results.append((user, decrypted_pw, decryption_ok))
+    for user, enc_pw in RE_USER.findall(file_contents):
+        decrypt_ok, pw = decrypt_password(enc_pw)
+        user_results.append((user, pw, decrypt_ok))
 
     # Find all type 7 OSPF keys
     ospf_results = []
-    for intf_match in INTFCONFIG_PATTERN.finditer(file_contents):
-        intf_name = intf_match.group(1)
-        intf_config = intf_match.group(2)
-        for key_id, encrypted_pw in OSPFKEY_PATTERN.findall(intf_config):
-            decryption_ok, decrypted_pw = decrypt_password(encrypted_pw)
-            ospf_results.append((intf_name, key_id, decrypted_pw, decryption_ok))
+    for intf, intf_cfg in RE_IFCONFIG.findall(file_contents):
+        for key_id, enc_key in RE_OSPFKEY.findall(intf_cfg):
+            decrypt_ok, key = decrypt_password(enc_key)
+            ospf_results.append((intf, key_id, key, decrypt_ok))
 
-    return user_results, ospf_results
+    
+    # Find all insecure TACACS keys
+    tacacs_results = []
+    for server, server_cfg in RE_TACACS.findall(file_contents):
+        if match := RE_ENC_KEY.search(server_cfg):
+            decrypt_ok, key = decrypt_password(match.group(1))
+        elif match := RE_UNENC_KEY.search(server_cfg):
+            decrypt_ok, key = True, match.group(1)
+        else:
+            continue
+        tacacs_results.append((server, key, decrypt_ok))
+
+    return user_results, ospf_results, tacacs_results
 
 
 def process_file(filepath: str, mask_decrypted: bool = False) -> bool:
@@ -126,8 +156,8 @@ def process_file(filepath: str, mask_decrypted: bool = False) -> bool:
 
     Returns True if any found, else False.
     """
-    user_pws, ospf_keys = parse_file(filepath)
-    if not user_pws and not ospf_keys:
+    user_pws, ospf_keys, tacacs_keys = parse_file(filepath)
+    if not (user_pws or ospf_keys or tacacs_keys):
         return False
 
     # Print file name in bold
@@ -145,9 +175,18 @@ def process_file(filepath: str, mask_decrypted: bool = False) -> bool:
     for intf_name, key_id, decrypted_pw, decryption_ok in ospf_keys:
         if decryption_ok:
             output = "<MASKED>" if mask_decrypted else decrypted_pw
-            print(f"  Interface {intf_name}, OSPF key {key_id}: {output}")
+            print(f"  Interface {intf_name}, OSPF Key {key_id}: {output}")
         else:
             print(f"  Interface {intf_name}, OSPF Key {key_id}, ERROR: {decrypted_pw}")
+
+    # Print decrypted TACACS keys
+    for server_name, decrypted_pw, decryption_ok in tacacs_keys:
+        if decryption_ok:
+            output = "<MASKED>" if mask_decrypted else decrypted_pw
+            print(f"  TACACS server {server_name}, Key: {output}")
+        else:
+            print(f"  TACACS server {server_name}, ERROR: {decrypted_pw}")
+
 
     return True
 
@@ -198,10 +237,11 @@ def process_directory(
 
 def output_csv(target_path: str, max_depth: int, mask_decrypted: bool):
     """
-    Output all decrypted user passwords and OSPF keys in CSV format.
+    Output all decrypted user passwords, OSPF keys, and TACACS keys in CSV format.
 
     CSV Columns:
-      file, username, decrypted_password, ospf_interface, ospf_key_id, ospf_key
+      file, username, decrypted_password, ospf_interface, ospf_key_id, ospf_key,
+      tacacs_server, tacacs_key
 
     Recursively scans directories up to `max_depth`. Outputs to stdout.
     """
@@ -213,6 +253,8 @@ def output_csv(target_path: str, max_depth: int, mask_decrypted: bool):
         "ospf_interface",
         "ospf_key_id",
         "ospf_key",
+        "tacacs_server",
+        "tacacs_key"
     ])
 
     to_scan = []
@@ -229,15 +271,21 @@ def output_csv(target_path: str, max_depth: int, mask_decrypted: bool):
 
     for filepath in to_scan:
         abs_path = os.path.abspath(filepath)
-        users, ospfs = parse_file(filepath)
-        for user, pw, ok in users:
-            if ok:
+        users, ospfs, tacs = parse_file(filepath)
+        for user, pw, decrypt_ok in users:
+            if decrypt_ok:
                 pw_out = "<MASKED>" if mask_decrypted else pw
-                writer.writerow([abs_path, user, pw_out, "", "", ""])
-        for intf, keyid, pw, ok in ospfs:
-            if ok:
-                pw_out = "<MASKED>" if mask_decrypted else pw
-                writer.writerow([abs_path, "", "", intf, keyid, pw_out])
+                writer.writerow([abs_path, user, pw_out, "", "", "", "", ""])
+
+        for intf, keyid, key, decrypt_ok in ospfs:
+            if decrypt_ok:
+                key_out = "<MASKED>" if mask_decrypted else key
+                writer.writerow([abs_path, "", "", intf, keyid, key_out])
+
+        for server, key, decrypt_ok in tacs:
+            if decrypt_ok:
+                key_out = "<MASKED>" if mask_decrypted else key
+                writer.writerow([abs_path, "", "", "", "", "", server, key_out])
 
 
 def main():
@@ -296,8 +344,8 @@ def main():
 
     # If -s is given => treat the argument as a raw type 7 string
     if args.string:
-        decryption_ok, result = decrypt_password(args.target)
-        if decryption_ok:
+        decrypt_ok, result = decrypt_password(args.target)
+        if decrypt_ok:
             if args.mask:
                 print(f"Decrypted password: {BOLD}<MASKED>{RESET}")
             else:
@@ -323,8 +371,8 @@ def main():
                 )
     elif os.path.isfile(path):
         # Check file extension
-        _, file_extension = os.path.splitext(path)
-        if file_extension.lower() in ALLOWED_EXTENSIONS:
+        file_extension = os.path.splitext(path)[1].lower()
+        if file_extension in ALLOWED_EXTENSIONS:
             found_in_file = process_file(path, mask_decrypted=args.mask)
             if not found_in_file:
                 print(f"No Type 7 passwords found in file: {os.path.abspath(path)}")
