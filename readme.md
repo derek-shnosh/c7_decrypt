@@ -27,7 +27,7 @@ This Python script decrypts Cisco “type 7” passwords used for local users, O
 
 ## Requirements
 
-- Python 3.x
+- Python 3.8+
 
 ## Usage
 
