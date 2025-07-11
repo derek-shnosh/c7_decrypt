@@ -18,6 +18,7 @@ def test_decrypt_password_known_values():
         "1403171818142B38373F3C2726": "testpassword",
         "00101615104B0A151C36435C0D4B": "testpassword2",
         "044F0E151B2E5F5E0F12000E": "testospfkey",
+        "071B245F5A1D1806161118070133": "testtacacskey"
     }
     for encrypted_pw, expected_plaintext in samples.items():
         ok, result = decrypt_password(encrypted_pw)
@@ -27,7 +28,7 @@ def test_decrypt_password_known_values():
 
 def test_parse_valid_file():
     valid_file = os.path.join(SAMPLES_DIR, "valid.txt")
-    user_entries, ospf_entries = parse_file(valid_file)
+    user_entries, ospf_entries, tacacs_entries = parse_file(valid_file)
 
     # Two valid user entries
     assert len(user_entries) == 2
@@ -43,18 +44,26 @@ def test_parse_valid_file():
 
     # One valid OSPF entry
     assert len(ospf_entries) == 1
-    intf_name, key_id, decrypted_pw, ok = ospf_entries[0]
+    intf_name, key_id, decrypted_key, ok = ospf_entries[0]
     assert intf_name == "Vlan800"
     assert key_id == "1"
+    assert decrypted_key == "testospfkey"
     assert ok
-    assert decrypted_pw == "testospfkey"
+
+    # One valid TACACS entry
+    assert len(tacacs_entries) == 1
+    server_name, server_key, ok = tacacs_entries[0]
+    assert server_name == "TACACS_1"
+    assert server_key == "testtacacskey"
+    assert ok
 
 
 def test_parse_invalid_file():
     invalid_file = os.path.join(SAMPLES_DIR, "invalid.txt")
-    user_entries, ospf_entries = parse_file(invalid_file)
+    user_entries, ospf_entries, tacacs_entries = parse_file(invalid_file)
     assert not user_entries
     assert not ospf_entries
+    assert not tacacs_entries
 
 
 def test_process_file_outputs(capsys):
@@ -66,6 +75,7 @@ def test_process_file_outputs(capsys):
     assert "testpassword" in out
     assert "testpassword2" in out
     assert "testospfkey" in out
+    assert "testtacacskey" in out
 
     # With masking
     assert process_file(valid_file, mask_decrypted=True)

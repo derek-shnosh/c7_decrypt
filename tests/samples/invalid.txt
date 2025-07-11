@@ -1,8 +1,14 @@
-# Invalid credential example ('usrname', 'passwd')
+# Invalid example ('usrname', 'passwd')
 usrname testadmin privilege 15 passwd 7 1403171818142B38373F3C2726
-
+!
 # Invalid OSPF key example ('mssage-digest-key')
 interface Vlan800
  description OSPF_Transit
  ip address 10.192.63.1 255.255.255.248
  ip ospf mssage-digest-key 1 md5 7 044F0E151B2E5F5E0F12000E
+!
+# Invalid TACACS example ('srver', 'ky')
+tacacs srver TACACS_1
+ address ipv4 10.192.255.21
+ ky 7 071B245F5A1D1806161118070133
+!
