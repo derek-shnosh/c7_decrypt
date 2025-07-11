@@ -1,23 +1,29 @@
-[![Cisco Type 7 Decrypter](https://github.com/derek-shnosh/c7_decrypt/actions/workflows/python-app.yml/badge.svg)](https://github.com/derek-shnosh/c7_decrypt/actions/workflows/python-app.yml)
+![pipeline](https://gitlab.c1engineering.com/dsmiley/c7_decrypt/badges/main/pipeline.svg)
 
 # Cisco Type 7 Decrypter
 
-This Python script decrypts Cisco “type 7” passwords and OSPF MD5 keys. It can:
+This Python script decrypts Cisco “type 7” passwords used for local users, OSPF keys, and TACACS keys. It can:
 
 1. **Parse a file** (with the allowed extensions: `.txt`, `.log`, or `.cisco`) for lines like:
    ```
    username <USERNAME> privilege 15 password 7 <ENCRYPTED>
    ```
-2. **Parse a file** for OSPF MD5 key lines under interface blocks, e.g.:
+2. **Parse a file** for OSPF MD5 key lines within interface configs, e.g.:
    ```
    interface <INTF_NAME>
      …
      ip ospf message-digest-key <KEY_ID> md5 7 <ENCRYPTED>
    ```
-3. **Parse a directory** of files (with optional recursion) for both of the above.
-4. **Decrypt a single** raw “type 7” encrypted string.
-
-It uses the “decimal offset + 53-byte key” scheme found in some Cisco devices, rather than the more commonly documented 22-byte key or short array. The first two decimal digits of the encrypted string represent the XOR offset in `[0..15]`.
+3. **Parse a file** for insecure TACACS server keys, e.g.:
+   ```
+   tacacs server <SERVER_NAME>
+     …
+     key 7 <ENCRYPTED>
+      - or -
+     key <PLAINTEXT>
+   ```
+4. **Parse a directory** of files (with optional recursion) for all of the above.
+5. **Decrypt a single** raw “type 7” encrypted string.
 
 ## Requirements
 
@@ -45,7 +51,7 @@ options:
 
 1. **Decrypt a single Type 7 string**:
    ```bash
-   ./cisco_type7_decrypt.py -s 15060E1F103A2A373B243A3017
+   ./c7_decrypt.py -s 15060E1F103A2A373B243A3017
    ```
    If valid, you’ll see output like:
    ```
@@ -54,28 +60,29 @@ options:
 
 2. **Parse a single file**:
    ```bash
-   ./cisco_type7_decrypt.py config.txt
+   ./c7_decrypt.py config.txt
    ```
    - Must have an allowed extension (`.txt`, `.log`, `.cisco`).
    - Decrypts any `username … password 7 <ENC>` lines.
-   - Decrypts any `ip ospf message-digest-key … md5 7 <ENC>` under interface configurations.
+   - Decrypts any `ip ospf message-digest-key <#> md5 7 <ENC>` under interface configurations.
+   - Decrypts any `key 7 <ENC>` under TACACS server configurations.
 
 3. **Parse a directory (non-recursive)**:
    ```bash
-   ./cisco_type7_decrypt.py /path/to/configs
+   ./c7_decrypt.py /path/to/configs
    ```
    - Only `.txt`, `.log`, `.cisco` files are scanned.
    - Prints decrypted Type 7 passwords/key if found.
 
 4. **Parse a directory (recursive)**:
    ```bash
-   ./cisco_type7_decrypt.py -r 2 /path/to/configs
+   ./c7_decrypt.py -r 2 /path/to/configs
    ```
    - Processes `.txt`, `.log`, `.cisco` files down to 2 subdirectory levels.
 
 5. **Mask the decrypted passwords** (e.g., for security audits):
    ```bash
-   ./cisco_type7_decrypt.py --mask /path/to/configs
+   ./c7_decrypt.py --mask /path/to/configs
    ```
    - Instead of printing the real plaintext, it displays `<MASKED>` for each found password.
    - Useful in scenarios where you want to confirm the existence of Type 7 passwords **without** exposing them.
@@ -85,17 +92,7 @@ options:
 You can emit all findings in **CSV** format by adding the `-c`/`--csv` flag (ignored in string mode). The output is written to **stdout** with these columns:
 
 ```
-file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key
-```
-
-To save the CSV directly to a file, use shell redirection (`>` or `>>`). For example:
-
-```bash
-# Overwrite or create results.csv
-./c7_decrypt.py --csv /path/to/configs > results.csv
-
-# Append to an existing file
-./c7_decrypt.py --csv /path/to/configs >> results.csv
+file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key,tacacs_server,tacacs_key
 ```
 
 #### Example
@@ -107,10 +104,21 @@ To save the CSV directly to a file, use shell redirection (`>` or `>>`). For exa
 Produces:
 
 ```
-file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key
-/home/user/configs/router1.txt,testadmin,testpassword,,,  
-/home/user/configs/router1.txt,,,Vlan800,1,ospfsecret  
+file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key,tacacs_server,tacacs_key
+/home/user/configs/router1.txt,testadmin,testpassword,,,,,
+/home/user/configs/router1.txt,,,Vlan800,1,ospfsecret,,
+/home/user/configs/router1.txt,,,
 …
+```
+
+To save the CSV directly to a file, use shell redirection (`>` or `>>`). For example:
+
+```bash
+# Overwrite or create results.csv
+./c7_decrypt.py --csv /path/to/configs > results.csv
+
+# Append to an existing file
+./c7_decrypt.py --csv /path/to/configs >> results.csv
 ```
 
 ### Behavior
@@ -148,11 +156,6 @@ file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key
 
 4. **Masking for Security Audits**
    - The `--mask` allows you to verify where Type 7 passwords exist in your configs, **without** revealing the actual plaintext. This option is especially useful during internal or external **security assessments**.
-
-5. **Parsing (using Regex)**
-   - **User passwords**: `^username (\S+) privilege 15 password 7 (\S+)`
-   - **Interface blocks**: `^interface (\S+)(.*?)(?=^\s*interface\s|\Z)`
-   - **OSPF keys**: `^\s+ip ospf message-digest-key (\d+) md5 7 (\S+)`
 
 ---
 
