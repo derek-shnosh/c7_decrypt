@@ -25,6 +25,23 @@ This Python script decrypts Cisco “type 7” passwords used for local users, O
 4. **Parse a directory** of files (with optional recursion) for all of the above.
 5. **Decrypt a single** raw “type 7” encrypted string.
 
+## Use Cases
+
+- **Interactive Troubleshooting**
+  Quickly decrypt a single Type 7 string on the command line (`-s`) when reviewing live device logs or debugging automation failures.
+
+- **Configuration Reviews**
+  Use recursive directory scans (`-d`) to ensure no overlooked files in nested folders—ideal for large teams sharing network standards.
+
+- **Security Audits**
+  Scan entire configuration repositories (or live exports) to locate insecure (unencrypted or Type 7) credentials without manual searching.
+
+- **Bulk Reporting**
+  Generate CSV reports (`--csv`) for integration into vulnerability management or ticketing systems.
+
+- **CI/CD Integration**
+  Incorporate into build or compliance pipelines to automatically flag new or changed Cisco configs that contain weak password storage.
+
 ## Requirements
 
 - Python 3.8+
