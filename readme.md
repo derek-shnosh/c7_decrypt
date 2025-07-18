@@ -1,4 +1,5 @@
 [![Cisco Type 7 Decrypter](https://github.com/derek-shnosh/c7_decrypt/actions/workflows/python-app.yml/badge.svg)](https://github.com/derek-shnosh/c7_decrypt/actions/workflows/python-app.yml)
+[![published](https://static.production.devnetcloud.com/codeexchange/assets/images/devnet-published.svg)](https://developer.cisco.com/codeexchange/github/repo/derek-shnosh/c7_decrypt)
 
 # Cisco Type 7 Decrypter
 
