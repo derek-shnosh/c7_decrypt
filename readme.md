@@ -1,9 +1,8 @@
-[![Cisco Type 7 Decrypter](https://github.com/derek-shnosh/c7_decrypt/actions/workflows/python-app.yml/badge.svg)](https://github.com/derek-shnosh/c7_decrypt/actions/workflows/python-app.yml)
-[![published](https://static.production.devnetcloud.com/codeexchange/assets/images/devnet-published.svg)](https://developer.cisco.com/codeexchange/github/repo/derek-shnosh/c7_decrypt)
+![pipeline](https://gitlab.c1engineering.com/dsmiley/c7_decrypt/badges/main/pipeline.svg)
 
 # Cisco Type 7 Decrypter
 
-This Python script decrypts Cisco “type 7” passwords used for local users, OSPF keys, and TACACS keys. It can:
+This Python script decrypts Cisco “type 7” or otherwise insecure passwords used for local users, OSPF keys, and TACACS keys. It can:
 
 1. **Parse a file** (with the allowed extensions: `.txt`, `.log`, or `.cisco`) for lines like:
    ```
@@ -84,6 +83,7 @@ options:
    - Decrypts any `username … password 7 <ENC>` lines.
    - Decrypts any `ip ospf message-digest-key <#> md5 7 <ENC>` under interface configurations.
    - Decrypts any `key 7 <ENC>` under TACACS server configurations.
+   - Calls out any unencrypted passwords found for users or TACACS configs.
 
 3. **Parse a directory (non-recursive)**:
    ```bash
@@ -110,7 +110,7 @@ options:
 You can emit all findings in **CSV** format by adding the `-c`/`--csv` flag (ignored in string mode). The output is written to **stdout** with these columns:
 
 ```
-file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key,tacacs_server,tacacs_key
+file,username,type,decrypted_password,ospf_interface,ospf_key_id,ospf_key,tacacs_server,tacacs_key
 ```
 
 #### Example
@@ -122,10 +122,11 @@ file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key,tacacs_serv
 Produces:
 
 ```
-file,username,decrypted_password,ospf_interface,ospf_key_id,ospf_key,tacacs_server,tacacs_key
-/home/user/configs/router1.txt,testadmin,testpassword,,,,,
-/home/user/configs/router1.txt,,,Vlan800,1,ospfsecret,,
-/home/user/configs/router1.txt,,,
+file,username,type,decrypted_password,ospf_interface,ospf_key_id,ospf_key,tacacs_server,tacacs_key
+/path/to/configs/router1.txt,testadmin,7,testpassword,,,,,
+/path/to/configs/router1.txt,testadmin2,7,testpassword2,,,,,
+/path/to/configs/router1.txt,,,,Vlan800,1,testospfkey
+/path/to/configs/router1.txt,,,,,,,TACACS_1,testtacacskey
 …
 ```
 
