@@ -36,7 +36,7 @@ def test_parse_valid_file():
     # Build the set of successfully decrypted usernames explicitly
     usernames = set()
     for entry in user_entries:
-        username, _, success = entry
+        username, _, _, success = entry
         if success:
             usernames.add(username)
 

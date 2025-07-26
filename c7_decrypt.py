@@ -30,7 +30,7 @@ ALLOWED_EXTENSIONS = {'.txt', '.log', '.cisco'}
 
 # Capture <USER> and <ENCRYPTED_PASSWORD>
 RE_USER = re.compile(
-    r"^username (\S+) privilege 15 password 7 (\S+)",
+    r"^username (\S+) privilege 15 password ([07]) (\S+)",
     re.MULTILINE
 )
 
@@ -121,11 +121,14 @@ def parse_file(filepath: str):
         print(f"Error reading file '{filepath}': {e}")
         return [], [], []
 
-    # Find all type 7 user passwords
+    # Find all type 0 or 7 user passwords
     user_results = []
-    for user, enc_pw in RE_USER.findall(file_contents):
-        decrypt_ok, pw = decrypt_password(enc_pw)
-        user_results.append((user, pw, decrypt_ok))
+    for user, type, pw_string in RE_USER.findall(file_contents):
+        if type == "7":
+            decrypt_ok, pw = decrypt_password(pw_string)
+            user_results.append((user, type, pw, decrypt_ok))
+        elif type == "0":
+            user_results.append((user, type, pw_string, True))
 
     # Find all type 7 OSPF keys
     ospf_results = []
@@ -164,10 +167,10 @@ def process_file(filepath: str, mask_decrypted: bool = False) -> bool:
     print(f"File: {BOLD}{os.path.abspath(filepath)}{RESET}")
 
     # Print decrypted user passwords
-    for user, decrypted_pw, decryption_ok in user_pws:
+    for user, type, decrypted_pw, decryption_ok in user_pws:
         if decryption_ok:
             output = "<MASKED>" if mask_decrypted else decrypted_pw
-            print(f"  Username: {user}, Decrypted Password: {output}")
+            print(f"  Username: {user}, Type {type} Password: {output}")
         else:
             print(f"  Username: {user}, ERROR: {decrypted_pw}")
 
@@ -249,6 +252,7 @@ def output_csv(target_path: str, max_depth: int, mask_decrypted: bool):
     writer.writerow([
         "file",
         "username",
+        "type",
         "decrypted_password",
         "ospf_interface",
         "ospf_key_id",
@@ -272,20 +276,20 @@ def output_csv(target_path: str, max_depth: int, mask_decrypted: bool):
     for filepath in to_scan:
         abs_path = os.path.abspath(filepath)
         users, ospfs, tacs = parse_file(filepath)
-        for user, pw, decrypt_ok in users:
+        for user, type, pw, decrypt_ok in users:
             if decrypt_ok:
                 pw_out = "<MASKED>" if mask_decrypted else pw
-                writer.writerow([abs_path, user, pw_out, "", "", "", "", ""])
+                writer.writerow([abs_path, user, type, pw_out, "", "", "", "", ""])
 
         for intf, keyid, key, decrypt_ok in ospfs:
             if decrypt_ok:
                 key_out = "<MASKED>" if mask_decrypted else key
-                writer.writerow([abs_path, "", "", intf, keyid, key_out])
+                writer.writerow([abs_path, "", "", "", intf, keyid, key_out])
 
         for server, key, decrypt_ok in tacs:
             if decrypt_ok:
                 key_out = "<MASKED>" if mask_decrypted else key
-                writer.writerow([abs_path, "", "", "", "", "", server, key_out])
+                writer.writerow([abs_path, "", "", "", "", "", "", server, key_out])
 
 
 def main():
@@ -347,9 +351,9 @@ def main():
         decrypt_ok, result = decrypt_password(args.target)
         if decrypt_ok:
             if args.mask:
-                print(f"Decrypted password: {BOLD}<MASKED>{RESET}")
+                print(f"Insecure Password: {BOLD}<MASKED>{RESET}")
             else:
-                print(f"Decrypted password: {BOLD}{result}{RESET}")
+                print(f"Insecure Password: {BOLD}{result}{RESET}")
         else:
             print(f"Could not decrypt '{args.target}': {result}")
         return
@@ -367,7 +371,7 @@ def main():
             entries = list(os.scandir(path))
             if entries:  # not empty
                 print(
-                    f"No Type 7s found in any file in path: {os.path.abspath(path)}"
+                    f"No insecure passwords or keys found in any file in path: {os.path.abspath(path)}"
                 )
     elif os.path.isfile(path):
         # Check file extension
@@ -375,7 +379,7 @@ def main():
         if file_extension in ALLOWED_EXTENSIONS:
             found_in_file = process_file(path, mask_decrypted=args.mask)
             if not found_in_file:
-                print(f"No Type 7 passwords found in file: {os.path.abspath(path)}")
+                print(f"No insecure passwords or keys found in file: {os.path.abspath(path)}")
         else:
             print(f"File extension not allowed for: {os.path.abspath(path)}")
     else:
